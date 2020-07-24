@@ -1,6 +1,6 @@
 # parameters
-ARG REPO_NAME="<REPO_NAME_HERE>"
-ARG MAINTAINER="<YOUR_FULL_NAME> (<YOUR_EMAIL_ADDRESS>)"
+ARG REPO_NAME="dt-code-api"
+ARG MAINTAINER="Andrea F. Daniele (afdaniele@ttic.edu)"
 
 # ==================================================>
 # ==> Do not change the code below this line
