@@ -27,8 +27,14 @@ def _status():
         data[tag] = {
             'status': module.status.name,
             'version': {
-                'current': module.version,
-                'remote': module.remote_version
+                'local': {
+                    'head': module.version,
+                    'closest': module.closest_version
+                },
+                'remote': {
+                    'head': module.remote_version,
+                    'closest': module.closest_remote_version
+                },
             },
             **({'progress': module.progress} if module.status == ModuleStatus.UPDATING else {})
         }

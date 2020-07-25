@@ -53,8 +53,10 @@ class DTModule(object):
         # ---
         self._image = image
         self._tag = tag
-        self._current_version = self._image.labels.get(dt_label('code.version.head'), 'ND')
+        self._head_version = self._image.labels.get(dt_label('code.version.head'), 'ND')
+        self._closest_version = self._image.labels.get(dt_label('code.version.closest'), 'ND')
         self._remote_version = 'ND'
+        self._closest_remote_version = 'ND'
         self._progress = None
         self._status = ModuleStatus.UNKNOWN
 
@@ -84,7 +86,11 @@ class DTModule(object):
 
     @property
     def version(self) -> str:
-        return self._current_version
+        return self._head_version
+
+    @property
+    def closest_version(self) -> str:
+        return self._closest_version
 
     @property
     def remote_version(self) -> str:
@@ -93,6 +99,14 @@ class DTModule(object):
     @remote_version.setter
     def remote_version(self, new_version):
         self._remote_version = new_version
+
+    @property
+    def closest_remote_version(self) -> str:
+        return self._closest_remote_version
+
+    @closest_remote_version.setter
+    def closest_remote_version(self, new_version):
+        self._closest_remote_version = new_version
 
     @property
     def progress(self) -> int:
