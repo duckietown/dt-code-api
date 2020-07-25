@@ -6,7 +6,6 @@ from threading import Thread
 from dt_class_utils import DTProcess
 from dt_module_utils import set_module_unhealthy, set_module_healthy
 
-from code_api import logger
 from code_api.utils import \
     get_client, \
     get_endpoint_architecture, \
@@ -18,7 +17,7 @@ from code_api.constants import ModuleStatus, CHECK_UPDATES_EVERY_MIN
 
 from .base import Job
 
-SOLID_STATUS = [ModuleStatus.UP_TO_DATE, ModuleStatus.OUT_OF_DATE]
+SOLID_STATUS = [ModuleStatus.UPDATED, ModuleStatus.BEHIND, ModuleStatus.AHEAD]
 FROZEN_STATUS = [ModuleStatus.UPDATING]
 
 
@@ -96,6 +95,10 @@ class UpdateCheckerJob(Job):
 
         # check which modules need update
         for name, module in KnowledgeBase.get('modules'):
+            # we leave modules that are updating alone
+            if module.status in FROZEN_STATUS:
+                continue
+
             # fetch remote image labels
             remote_labels = module.remote_labels()
             if remote_labels is None:
@@ -104,6 +107,7 @@ class UpdateCheckerJob(Job):
                 if module.status not in SOLID_STATUS + FROZEN_STATUS:
                     module.status = ModuleStatus.NOT_FOUND
                 continue
+
             # fetch local and remote build time
             image_labels = module.labels()
             time_lbl = dt_label('time')
@@ -111,6 +115,7 @@ class UpdateCheckerJob(Job):
             image_time = parse_time(image_time_str)
             remote_time_str = remote_labels.get(time_lbl, 'ND')
             remote_time = parse_time(remote_time_str)
+
             # error, up-to-date or to update
             if remote_time is None:
                 self._logger.debug('Could not get remote build time for module "%s"' % name)
@@ -118,24 +123,40 @@ class UpdateCheckerJob(Job):
                 if module.status not in SOLID_STATUS + FROZEN_STATUS:
                     module.status = ModuleStatus.ERROR
                 continue
-            if image_time is None or image_time < remote_time:
-                self._logger.debug('Module "%s" has a local build time of %s and a remote build '
-                                   'time of %s' % (name, image_time_str, remote_time_str))
-                # the remote copy is newer than the local, fetch versions
-                head_version_lbl = dt_label('code.version.head')
-                closest_version_lbl = dt_label('code.version.closest')
-                version_closest = image_labels.get(closest_version_lbl, 'ND')
-                remote_version = remote_labels.get(head_version_lbl, 'ND')
-                remote_version_closest = remote_labels.get(closest_version_lbl, 'ND')
-                # update version in module
-                module.remote_version = remote_version
-                logger.info('Found new version for module "%s" (%s)[%s] -> (%s)[%s]' % (
-                    name, version_closest, module.version, remote_version_closest, remote_version
-                ))
-                module.status = ModuleStatus.OUT_OF_DATE
-            else:
+
+            # fetch versions
+            head_version_lbl = dt_label('code.version.head')
+            closest_version_lbl = dt_label('code.version.closest')
+            remote_version = remote_labels.get(head_version_lbl, 'ND')
+            remote_version_closest = remote_labels.get(closest_version_lbl, 'ND')
+
+            # update version in module
+            module.remote_version = remote_version
+            module.closest_remote_version = remote_version_closest
+
+            # compare local and remote build time
+            if image_time is None or image_time > remote_time:
+                # module is ahead of remote
+                module.status = ModuleStatus.AHEAD
+            elif image_time == remote_time:
                 # module is up-to-date
-                module.status = ModuleStatus.UP_TO_DATE
+                module.status = ModuleStatus.UPDATED
+            elif image_time < remote_time:
+                tab = ' ' * 3
+                self._logger.info(
+                    f'Found new version for module "{name}":\n'
+                    f'{tab}- Versions:\n'
+                    f'{tab}{tab}- Local  (closest/head): '
+                    f'{module.closest_version} \t/ {module.version}\n'
+                    f'{tab}{tab}- Remote (closest/head): '
+                    f'{remote_version_closest} \t/ {remote_version}\n'
+                    f'{tab}- Build time:\n'
+                    f'{tab}{tab}- Local: {image_time_str}\n'
+                    f'{tab}{tab}- Remote: {remote_time_str}\n'
+                )
+                # the remote copy is newer than the local
+                module.status = ModuleStatus.BEHIND
+
 
 
 class UpdateCheckerWorker(Thread):

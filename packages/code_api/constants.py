@@ -4,6 +4,7 @@ from enum import IntEnum
 
 CHECK_UPDATES_EVERY_MIN = int(os.environ.get('CHECK_UPDATES_EVERY_MIN', 10))
 RELEASES_ONLY = os.environ.get('RELEASES_ONLY', 'yes').lower() in ['1', 'yes', 'true']
+DT_MODULE_TYPE = os.environ.get('DT_MODULE_TYPE', None)
 
 CANONICAL_ARCH = {
     'arm': 'arm32v7',
@@ -32,10 +33,13 @@ DOCKER_HUB_API_URL = {
 }
 
 
+# NOTE: Please, refrain from changing these names, other modules rely on these names being stable
 class ModuleStatus(IntEnum):
     UNKNOWN = -1
-    UP_TO_DATE = 0
-    OUT_OF_DATE = 1
-    NOT_FOUND = 2
+    UPDATED = 0
+    BEHIND = 1
+    AHEAD = 2
+    NOT_FOUND = 5
     UPDATING = 10
+    FINALIZING = 15
     ERROR = 20

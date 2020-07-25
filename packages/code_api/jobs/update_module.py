@@ -66,7 +66,7 @@ class UpdateModuleWorker(Thread):
                             return
                         self._module.progress = progress
                     # tell everybody we are done
-                    self._module.status = ModuleStatus.UP_TO_DATE
+                    self._module.status = ModuleStatus.UPDATED
                 except BaseException:
                     set_module_unhealthy()
                     traceback.print_exc()
