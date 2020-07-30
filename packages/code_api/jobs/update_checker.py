@@ -68,7 +68,7 @@ class UpdateCheckerJob(Job):
                 if KnowledgeBase.has('modules', module_name):
                     module = KnowledgeBase.get('modules', module_name)
                     if module.image.id == image.id:
-                        self._logger.debug('Module "%s" is still there' % module_name)
+                        self._logger.debug('Module %s is still there' % module_name)
                         # the image is already in the KB, change its status to UNKNOWN
                         if module.status not in SOLID_STATUS + FROZEN_STATUS:
                             module.status = ModuleStatus.UNKNOWN
@@ -77,14 +77,14 @@ class UpdateCheckerJob(Job):
             # add a new module to the KB if this is a new image
             if not found and module_tag is not None:
                 KnowledgeBase.set('modules', module_name, DTModule(image, module_tag))
-                self._logger.info(' - Tracking new module "%s"' % module_name)
+                self._logger.info(' - Tracking new module %s' % module_name)
 
         # clean KB by removing tracked modules that are not there anymore
         to_be_removed = set()
         for name, module in KnowledgeBase.get('modules'):
             tag = KnowledgeBase.get('tags', name)
             if tag not in compatible_tags and module.status not in FROZEN_STATUS:
-                self._logger.info(' - Untracking module "%s"' % tag)
+                self._logger.info(' - Untracking module %s' % tag)
                 to_be_removed.add(name)
         for name in to_be_removed:
             KnowledgeBase.remove('modules', name)
@@ -100,7 +100,7 @@ class UpdateCheckerJob(Job):
             # fetch remote image labels
             remote_labels = module.remote_labels()
             if remote_labels is None:
-                self._logger.debug('Could not get remote labels for module "%s"' % name)
+                self._logger.debug('Could not get remote labels for module %s' % name)
                 # image is not available online
                 if module.status not in SOLID_STATUS + FROZEN_STATUS:
                     module.status = ModuleStatus.NOT_FOUND
@@ -116,7 +116,7 @@ class UpdateCheckerJob(Job):
 
             # error, up-to-date or to update
             if remote_time is None:
-                self._logger.debug('Could not get remote build time for module "%s"' % name)
+                self._logger.debug('Could not get remote build time for module %s' % name)
                 # remote build time could not be fetched, error
                 if module.status not in SOLID_STATUS + FROZEN_STATUS:
                     module.status = ModuleStatus.ERROR
