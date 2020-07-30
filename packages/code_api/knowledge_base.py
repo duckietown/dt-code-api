@@ -1,8 +1,9 @@
-from typing import Dict, Iterator, Tuple, Any, Union
+from typing import Dict, Iterator, Tuple, Any, Union, List
 from docker.models.images import Image as DockerImage
+from docker.models.containers import Container as DockerContainer
 
 from .constants import ModuleStatus
-from .utils import inspect_remote_image, dt_label
+from .utils import inspect_remote_image, dt_label, get_client
 
 
 class NotSet:
@@ -11,7 +12,8 @@ class NotSet:
 
 class _KnowledgeBase(dict):
 
-    def get(self, group: str, key: str = None, default: Any = NotSet) -> Union[Iterator[Tuple[str, Any]], Any]:
+    def get(self, group: str, key: str = None, default: Any = NotSet) -> \
+            Union[Iterator[Tuple[str, Any]], Any]:
         if key is not None:
             key = '/%s/%s' % (group, key)
             if key not in self:
@@ -58,6 +60,7 @@ class DTModule(object):
         self._remote_version = 'ND'
         self._closest_remote_version = 'ND'
         self._progress = None
+        self._step = None
         self._status = ModuleStatus.UNKNOWN
 
     @property
@@ -109,6 +112,14 @@ class DTModule(object):
         self._closest_remote_version = new_version
 
     @property
+    def step(self) -> str:
+        return self._step
+
+    @step.setter
+    def step(self, step: str):
+        self._step = step
+
+    @property
     def progress(self) -> int:
         return self._progress
 
@@ -144,6 +155,22 @@ class DTModule(object):
             remote_config = metadata['config'] if 'config' in metadata else {}
             labels = remote_config['Labels'] if 'Labels' in remote_config else None
         return labels
+
+    def containers(self, status='all') -> List[DockerContainer]:
+        valid_status = ['all', 'restarting', 'running', 'paused', 'exited']
+        if status not in valid_status:
+            raise ValueError("Invalid status '{}'. Valid choices are {}".format(
+                status, ', '.join(valid_status)
+            ))
+        # ---
+        client = get_client()
+        return client.containers.list(
+            all=True,
+            filters={
+                'ancestor': self._tag,
+                **({'status': status} if status != 'all' else {})
+            }
+        )
 
 
 KnowledgeBase = _KnowledgeBase()

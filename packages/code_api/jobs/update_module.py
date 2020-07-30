@@ -1,14 +1,19 @@
+import json
+import math
 import time
 import traceback
 from threading import Thread
+import docker.errors
 
 from dt_class_utils import DTProcess
-from dt_module_utils import set_module_unhealthy
+
+from code_api import logger
+from code_api.constants import ModuleStatus, STATIC_MODULE_CFG, DT_MODULE_TYPE
+from code_api.knowledge_base import DTModule
+from code_api.utils import get_client, get_container_config, dt_label, indent_str
+
 
 from .base import Job
-from code_api.knowledge_base import DTModule
-from code_api.utils import get_client
-from code_api.constants import ModuleStatus
 
 
 class UpdateModuleJob(Job):
@@ -21,22 +26,158 @@ class UpdateModuleJob(Job):
         return True
 
     def step(self):
+        module_name = self._module.name
         try:
+            substep = 'Initializing'
             client = get_client()
+            yield substep, 0
+
+            # step 1 [+5%]: get list of containers based on the image we want to update
+            substep = 'Fetching list of containers'
+            logger.debug('Module {}: Fetching list of containers using it.'.format(module_name))
+            containers = self._module.containers()
+            yield substep, 5
+
+            # step 2 [+80%]: update image
+            substep = 'Pulling image'
+            logger.debug('Module {}: Pulling new image.'.format(module_name))
             repository, tag = self._module.repository_and_tag()
+            image_name = '{}:{}'.format(repository, tag)
             total_layers = set()
             completed_layers = set()
-            for step in client.api.pull(repository, tag, stream=True, decode=True):
-                if 'status' not in step or 'id' not in step:
-                    continue
-                total_layers.add(step['id'])
-                if step['status'] in ['Pull complete', 'Already exists']:
-                    completed_layers.add(step['id'])
-                # compute progress
-                if len(total_layers) > 0:
-                    yield int(100 * len(completed_layers) / len(total_layers))
-            yield 100
-        except KeyboardInterrupt:
+            try:
+                for step in client.api.pull(repository, tag, stream=True, decode=True):
+                    if 'error' in step:
+                        return
+                    if 'status' not in step or 'id' not in step:
+                        continue
+                    total_layers.add(step['id'])
+                    if step['status'] in ['Pull complete', 'Already exists']:
+                        completed_layers.add(step['id'])
+                    # compute progress
+                    if len(total_layers) > 0:
+                        yield substep, 5 + int(80 * len(completed_layers) / len(total_layers))
+            except (docker.errors.APIError, Exception):
+                logger.error(
+                    'An error occurred while pulling a new version of the module {}.\n'
+                    'The error reads:\n\n{}'.format(
+                        module_name, indent_str(traceback.format_exc())
+                    )
+                )
+                return
+            image = client.images.get(image_name)
+            yield substep, 85
+
+            # step 2.1 [+0-15%]: do not rename/remove/recreate THIS container
+            if module_name == DT_MODULE_TYPE:
+                logger.info('Module {}: Updated, but its containers are left untouched.'.format(
+                    module_name
+                ))
+                yield 'Finished', 100
+                return
+
+            # step 3 [+5%]: stop and rename containers
+            substep = 'Renamig old containers'
+            logger.info('Module {}: Renaming old containers.'.format(module_name))
+            i = 0
+            containers_cfg = {}
+            for container in containers:
+                try:
+                    container.reload()
+                    old_name = container.name
+                    if container.status == 'running':
+                        logger.debug('Module {}: Stopping container {}.'.format(
+                            module_name, old_name
+                        ))
+                        container.stop()
+                    logger.debug('Module {}: Renaming container {} -> {}.'.format(
+                        module_name, old_name, old_name + '-old'
+                    ))
+                    container.rename(old_name + '-old')
+                    containers_cfg[old_name] = \
+                        (get_container_config(container, image), container)
+                except docker.errors.NotFound:
+                    # the container is gone, that is OK
+                    pass
+                # ---
+                yield substep, int(math.floor(85 + 5 * (i / len(containers))))
+                i += 1
+            yield substep, 90
+
+            # step 4 [+5%]: recreate containers
+            substep = 'Creating new containers'
+            logger.info('Module {}: Recreate containers.'.format(module_name))
+            i = 0
+            to_remove = []
+            for container_name, (old_container_cfg, old_container) in containers_cfg.items():
+                # combine old container configuration with static container configuration
+                container_cfg = {
+                    **old_container_cfg,
+                    **STATIC_MODULE_CFG
+                }
+                # add label container.owner
+                container_cfg['labels'].update({dt_label('container.owner'): DT_MODULE_TYPE})
+                # print some stats
+                container_cfg['image'] = image_name
+                container_cfg['name'] = container_name
+                logger.info(
+                    "Recreating container {} for module {};\n"
+                    "Old configuration was:\n\n{}\n\n"
+                    "New configuration is:\n\n{}\n".format(
+                        container_name, module_name,
+                        indent_str(json.dumps(old_container_cfg, sort_keys=True, indent=4)),
+                        indent_str(json.dumps(container_cfg, sort_keys=True, indent=4))
+                    )
+                )
+                # run new container
+                try:
+                    client.containers.run(
+                        **container_cfg
+                    )
+                    to_remove.append(old_container)
+                except (docker.errors.ContainerError, docker.errors.ImageNotFound,
+                        docker.errors.APIError):
+                    logger.warning(
+                        'An error occurred while trying to recreate the container {}.\n'
+                        'The error reads:\n{}'.format(
+                            container_name, indent_str(traceback.format_exc())
+                        )
+                    )
+                # ---
+                yield substep, int(math.floor(90 + 5 * (i / len(containers_cfg))))
+                i += 1
+            yield substep, 95
+
+            # step 5 [5%]: remove old containers
+            substep = 'Removing old containers'
+            logger.debug('Module {}: Removing old containers.'.format(module_name))
+            i = 0
+            for container in to_remove:
+                try:
+                    logger.debug('Module {}: Removing container {}.'.format(
+                        module_name, container.name
+                    ))
+                    container.remove()
+                except (docker.errors.ContainerError, docker.errors.ImageNotFound,
+                        docker.errors.APIError):
+                    logger.warning(
+                        'An error occurred while trying to remove the old container {}.'.format(
+                            container.name
+                        )
+                    )
+                # ---
+                yield substep, int(math.floor(95 + 5 * (i / len(to_remove))))
+            yield 'Finished', 100
+            return
+        except BaseException:
+            logger.error(
+                'An error occurred while trying to update the module {}.\n'
+                'This should not have happened. Please, open an issue on '
+                'https://github.com/duckietown/{}/issues.\n\n'
+                'The error reads:\n{}'.format(
+                    module_name, DT_MODULE_TYPE, indent_str(traceback.format_exc())
+                )
+            )
             return
 
 
@@ -57,18 +198,41 @@ class UpdateModuleWorker(Thread):
     def _work(self):
         while self._alive:
             if self._job.is_time():
+                old_status = self._module.status
                 try:
                     # tell everybody we are UPDATING
                     self._module.status = ModuleStatus.UPDATING
                     # monitor progress
-                    for progress in self._job.step():
+                    last_progress = 0
+                    for substep, progress in self._job.step():
                         if not self._alive:
                             return
                         self._module.progress = progress
-                    # tell everybody we are done
-                    self._module.status = ModuleStatus.UPDATED
+                        self._module.step = substep
+                        logger.debug('Updating module {}: Progress {:d}% ({})'.format(
+                            self._module.name, progress, substep
+                        ))
+                        last_progress = progress
+
+                    # check if 100 was yielded
+                    if last_progress == 100:
+                        # tell everybody we are done
+                        self._module.status = ModuleStatus.UPDATED
+                    else:
+                        # something weird happened, revert to old status
+                        self._module.status = old_status
+                    # ---
+                    self._module.progress = 0
                 except BaseException:
-                    set_module_unhealthy()
-                    traceback.print_exc()
+                    # something weird happened, revert to old status
+                    self._module.status = old_status
+                    logger.warning(
+                        'An error happened while updating the module {}.\n'
+                        'The error reads:\n\n{}'.format(
+                            self._module.name, indent_str(traceback.format_exc())
+                        )
+                    )
+                # we are done here
+                return
             # ---
             time.sleep(1.0 / self._heartbeat_hz)

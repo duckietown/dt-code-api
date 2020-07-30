@@ -32,8 +32,7 @@ def _update_single(module_name):
         return response_error(NEED_FORCE_MSG([module_name]))
     # spawn an update worker
     worker = UpdateModuleWorker(module)
-    # TODO: re-enable
-    # worker.start()
+    worker.start()
     return response_ok({})
 
 
@@ -56,8 +55,7 @@ def _update_all():
             continue
         # spawn an update worker
         worker = UpdateModuleWorker(module)
-        # TODO: re-enable
-        # worker.start()
+        worker.start()
         updating.add(name)
     return response_ok({'updating': list(updating)})
 

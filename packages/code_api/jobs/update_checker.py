@@ -51,8 +51,6 @@ class UpdateCheckerJob(Job):
         for image in images:
             if len(image.tags) <= 0:
                 continue
-            if image.labels.get(dt_label('image.authoritative'), '0') != '1':
-                continue
             found = False
             module_name = None
             module_tag = None
@@ -138,13 +136,15 @@ class UpdateCheckerJob(Job):
             if image_time is None or image_time > remote_time:
                 # module is ahead of remote
                 module.status = ModuleStatus.AHEAD
+                self._logger.debug('Module {} is AHEAD of its remote counterpart.'.format(name))
             elif image_time == remote_time:
                 # module is up-to-date
                 module.status = ModuleStatus.UPDATED
+                self._logger.debug('Module {} is UP TO DATE.'.format(name))
             elif image_time < remote_time:
                 tab = ' ' * 3
                 self._logger.info(
-                    f'Found new version for module "{name}":\n'
+                    f'Module "{name}" is BEHIND its remote counterpart:\n'
                     f'{tab}- Versions:\n'
                     f'{tab}{tab}- Local  (closest/head): '
                     f'{module.closest_version} \t/ {module.version}\n'
@@ -156,7 +156,6 @@ class UpdateCheckerJob(Job):
                 )
                 # the remote copy is newer than the local
                 module.status = ModuleStatus.BEHIND
-
 
 
 class UpdateCheckerWorker(Thread):

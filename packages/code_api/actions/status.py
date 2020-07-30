@@ -34,7 +34,7 @@ def _status():
                 'remote': {
                     'head': module.remote_version,
                     'closest': module.closest_remote_version
-                },
+                }
             },
             **({'progress': module.progress} if module.status == ModuleStatus.UPDATING else {})
         }

@@ -2,7 +2,7 @@ import os
 from enum import IntEnum
 
 
-CHECK_UPDATES_EVERY_MIN = int(os.environ.get('CHECK_UPDATES_EVERY_MIN', 10))
+CHECK_UPDATES_EVERY_MIN = max(1, int(os.environ.get('CHECK_UPDATES_EVERY_MIN', 10)))
 RELEASES_ONLY = os.environ.get('RELEASES_ONLY', 'yes').lower() in ['1', 'yes', 'true']
 DT_MODULE_TYPE = os.environ.get('DT_MODULE_TYPE', None)
 
@@ -32,6 +32,12 @@ DOCKER_HUB_API_URL = {
         'https://registry-1.docker.io/v2/{image}/blobs/{digest}'
 }
 
+STATIC_MODULE_CFG = {
+    'auto_remove': False,
+    'remove': False,
+    'detach': True
+}
+
 
 # NOTE: Please, refrain from changing these names, other modules rely on these names being stable
 class ModuleStatus(IntEnum):
@@ -41,5 +47,4 @@ class ModuleStatus(IntEnum):
     AHEAD = 2
     NOT_FOUND = 5
     UPDATING = 10
-    FINALIZING = 15
     ERROR = 20
