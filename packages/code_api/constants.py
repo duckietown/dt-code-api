@@ -1,6 +1,7 @@
 import os
 from enum import IntEnum
 
+API_VERSION = '1.0'
 
 CHECK_UPDATES_EVERY_MIN = max(1, int(os.environ.get('CHECK_UPDATES_EVERY_MIN', 10)))
 RELEASES_ONLY = os.environ.get('RELEASES_ONLY', 'yes').lower() in ['1', 'yes', 'true']

@@ -8,7 +8,7 @@ info = Blueprint('info', __name__)
 
 
 @info.route('/info')
-def _status():
+def _info():
     # return current status
     data = {}
     for tag, module in KnowledgeBase.get('modules'):
