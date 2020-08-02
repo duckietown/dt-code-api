@@ -1,7 +1,7 @@
 from flask import Blueprint, request
 
 from code_api.jobs import UpdateModuleWorker
-from code_api.utils import response_ok, response_error
+from code_api.utils import response_ok, response_error, response_need_force
 from code_api.knowledge_base import KnowledgeBase
 from code_api.constants import ModuleStatus
 
@@ -29,7 +29,7 @@ def _update_single(module_name):
         return response_error(f"Module '{module_name}' does not seem to have an update available.")
     # modules that are ahead need to be forced
     if module.status == ModuleStatus.AHEAD and not forced:
-        return response_error(NEED_FORCE_MSG([module_name]))
+        return response_need_force(NEED_FORCE_MSG([module_name]))
     # spawn an update worker
     worker = UpdateModuleWorker(module)
     worker.start()
@@ -48,7 +48,7 @@ def _update_all():
             if module.status == ModuleStatus.AHEAD:
                 need_force.append(name)
         if len(need_force) > 0:
-            return response_error(NEED_FORCE_MSG(need_force))
+            return response_need_force(NEED_FORCE_MSG(need_force))
     # update all modules
     for name, module in KnowledgeBase.get('modules'):
         if module.status not in [ModuleStatus.BEHIND, ModuleStatus.AHEAD]:

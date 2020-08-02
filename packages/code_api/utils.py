@@ -27,6 +27,14 @@ def response_error(message, *args, **kwargs):
     })
 
 
+def response_need_force(message, *args, **kwargs):
+    return jsonify({
+        'status': 'need-force',
+        'message': message,
+        'data': None
+    })
+
+
 def response_not_implemented(action, *args, **kwargs):
     return jsonify({
         'status': 'not-implemented',
