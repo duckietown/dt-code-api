@@ -26,6 +26,7 @@ def _status():
     for tag, module in KnowledgeBase.get('modules'):
         data[tag] = {
             'status': module.status.name,
+            'status_txt': module.step,
             'version': {
                 'local': {
                     'head': module.version,

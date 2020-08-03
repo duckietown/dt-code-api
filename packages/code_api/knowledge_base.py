@@ -55,6 +55,18 @@ class DTModule(object):
         # ---
         self._image = image
         self._tag = tag
+        # ---
+        self._head_version = None
+        self._closest_version = None
+        self._remote_version = None
+        self._closest_remote_version = None
+        self._progress = None
+        self._step = None
+        self._status = None
+        # ---
+        self.reset()
+
+    def reset(self):
         self._head_version = self._image.labels.get(dt_label('code.version.head'), 'ND')
         self._closest_version = self._image.labels.get(dt_label('code.version.closest'), 'ND')
         self._remote_version = 'ND'

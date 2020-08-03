@@ -24,6 +24,9 @@ def _update_single(module_name):
     module = KnowledgeBase.get('modules', module_name, None)
     if module is None:
         return response_error(f"Module '{module_name}' not found.")
+    # nothing to do if already updating
+    if module.status in [ModuleStatus.UPDATING]:
+        return response_ok({})
     # only modules that need update can be updated (seems fair)
     if module.status not in [ModuleStatus.BEHIND, ModuleStatus.AHEAD]:
         return response_error(f"Module '{module_name}' does not seem to have an update available.")
@@ -51,6 +54,9 @@ def _update_all():
             return response_need_force(NEED_FORCE_MSG(need_force))
     # update all modules
     for name, module in KnowledgeBase.get('modules'):
+        # nothing to do if already updating
+        if module.status in [ModuleStatus.UPDATING]:
+            continue
         if module.status not in [ModuleStatus.BEHIND, ModuleStatus.AHEAD]:
             continue
         # spawn an update worker

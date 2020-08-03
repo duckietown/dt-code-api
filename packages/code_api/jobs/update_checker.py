@@ -18,7 +18,7 @@ from code_api.constants import ModuleStatus, CHECK_UPDATES_EVERY_MIN
 from .base import Job
 
 SOLID_STATUS = [ModuleStatus.UPDATED, ModuleStatus.BEHIND, ModuleStatus.AHEAD]
-FROZEN_STATUS = [ModuleStatus.UPDATING]
+FROZEN_STATUS = [ModuleStatus.UPDATING, ModuleStatus.ERROR]
 
 
 class UpdateCheckerJob(Job):

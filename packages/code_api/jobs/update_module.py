@@ -30,13 +30,13 @@ class UpdateModuleJob(Job):
         try:
             substep = 'Initializing'
             client = get_client()
-            yield substep, 0
+            yield True, substep, 0
 
             # step 1 [+5%]: get list of containers based on the image we want to update
             substep = 'Fetching list of containers'
             logger.debug('Module {}: Fetching list of containers using it.'.format(module_name))
             containers = self._module.containers()
-            yield substep, 5
+            yield True, substep, 5
 
             # step 2 [+80%]: update image
             substep = 'Pulling image'
@@ -56,24 +56,25 @@ class UpdateModuleJob(Job):
                         completed_layers.add(step['id'])
                     # compute progress
                     if len(total_layers) > 0:
-                        yield substep, 5 + int(80 * len(completed_layers) / len(total_layers))
+                        yield True, substep, 5 + int(80 * len(completed_layers) / len(total_layers))
             except (docker.errors.APIError, Exception):
+                msg = 'An error occurred while pulling a new version of the module ' + module_name
                 logger.error(
-                    'An error occurred while pulling a new version of the module {}.\n'
-                    'The error reads:\n\n{}'.format(
-                        module_name, indent_str(traceback.format_exc())
+                    '{}.\nThe error reads:\n\n{}'.format(
+                        msg, indent_str(traceback.format_exc())
                     )
                 )
+                yield False, msg, -1
                 return
             image = client.images.get(image_name)
-            yield substep, 85
+            yield True, substep, 85
 
             # step 2.1 [+0-15%]: do not rename/remove/recreate THIS container
             if module_name == DT_MODULE_TYPE:
                 logger.info('Module {}: Updated, but its containers are left untouched.'.format(
                     module_name
                 ))
-                yield 'Finished', 100
+                yield True, 'Finished', 100
                 return
 
             # step 3 [+5%]: stop and rename containers
@@ -100,9 +101,9 @@ class UpdateModuleJob(Job):
                     # the container is gone, that is OK
                     pass
                 # ---
-                yield substep, int(math.floor(85 + 5 * (i / len(containers))))
+                yield True, substep, int(math.floor(85 + 5 * (i / len(containers))))
                 i += 1
-            yield substep, 90
+            yield True, substep, 90
 
             # step 4 [+5%]: recreate containers
             substep = 'Creating new containers'
@@ -137,16 +138,18 @@ class UpdateModuleJob(Job):
                     to_remove.append(old_container)
                 except (docker.errors.ContainerError, docker.errors.ImageNotFound,
                         docker.errors.APIError):
-                    logger.warning(
-                        'An error occurred while trying to recreate the container {}.\n'
-                        'The error reads:\n{}'.format(
-                            container_name, indent_str(traceback.format_exc())
+                    msg = 'An error occurred while recreating the container ' + container_name
+                    logger.error(
+                        '{}.\nThe error reads:\n{}'.format(
+                            msg, indent_str(traceback.format_exc())
                         )
                     )
+                    yield False, msg, -1
+                    return
                 # ---
-                yield substep, int(math.floor(90 + 5 * (i / len(containers_cfg))))
+                yield True, substep, int(math.floor(90 + 5 * (i / len(containers_cfg))))
                 i += 1
-            yield substep, 95
+            yield True, substep, 95
 
             # step 5 [5%]: remove old containers
             substep = 'Removing old containers'
@@ -166,8 +169,8 @@ class UpdateModuleJob(Job):
                         )
                     )
                 # ---
-                yield substep, int(math.floor(95 + 5 * (i / len(to_remove))))
-            yield 'Finished', 100
+                yield True, substep, int(math.floor(95 + 5 * (i / len(to_remove))))
+            yield True, 'Finished', 100
             return
         except BaseException:
             logger.error(
@@ -178,6 +181,7 @@ class UpdateModuleJob(Job):
                     module_name, DT_MODULE_TYPE, indent_str(traceback.format_exc())
                 )
             )
+            yield False, 'Generic error', -1
             return
 
 
@@ -198,17 +202,18 @@ class UpdateModuleWorker(Thread):
     def _work(self):
         while self._alive:
             if self._job.is_time():
-                old_status = self._module.status
                 try:
                     # tell everybody we are UPDATING
                     self._module.status = ModuleStatus.UPDATING
                     # monitor progress
                     last_progress = 0
-                    for substep, progress in self._job.step():
+                    for ok, substep, progress in self._job.step():
                         if not self._alive:
                             return
                         self._module.progress = progress
                         self._module.step = substep
+                        if not ok:
+                            break
                         logger.debug('Updating module {}: Progress {:d}% ({})'.format(
                             self._module.name, progress, substep
                         ))
@@ -219,20 +224,49 @@ class UpdateModuleWorker(Thread):
                         # tell everybody we are done
                         self._module.status = ModuleStatus.UPDATED
                     else:
-                        # something weird happened, revert to old status
-                        self._module.status = old_status
+                        # something weird happened, transition to ERROR state
+                        self._module.status = ModuleStatus.ERROR
+                        # reset status after 10 seconds
+                        UpdateModuleWorkerResetter(self._module).start()
                     # ---
                     self._module.progress = 0
                 except BaseException:
-                    # something weird happened, revert to old status
-                    self._module.status = old_status
+                    msg = 'An error occurred while updating the module ' + self._module.name
+                    # something weird happened, transition to ERROR state
+                    self._module.status = ModuleStatus.ERROR
+                    self._module.step = msg
+                    # reset status after 10 seconds
+                    UpdateModuleWorkerResetter(self._module).start()
+                    # ---
                     logger.warning(
-                        'An error happened while updating the module {}.\n'
-                        'The error reads:\n\n{}'.format(
-                            self._module.name, indent_str(traceback.format_exc())
+                        '{}.\nThe error reads:\n\n{}'.format(
+                            msg, indent_str(traceback.format_exc())
                         )
                     )
                 # we are done here
                 return
             # ---
+            time.sleep(1.0 / self._heartbeat_hz)
+
+
+class UpdateModuleWorkerResetter(Thread):
+
+    def __init__(self, module):
+        self._alive = True
+        self._heartbeat_hz = 0.3
+        self._module = module
+        self._action_time = time.time() + 10
+        super(UpdateModuleWorkerResetter, self).__init__(target=self._work)
+        # register shutdown callback
+        DTProcess.get_instance().register_shutdown_callback(self._shutdown)
+
+    def _shutdown(self):
+        self._alive = False
+
+    def _work(self):
+        while self._alive:
+            if time.time() > self._action_time:
+                # it is action time, reset module status
+                self._module.reset()
+                return
             time.sleep(1.0 / self._heartbeat_hz)
