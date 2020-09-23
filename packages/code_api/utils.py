@@ -148,7 +148,7 @@ def get_container_config(container: DockerContainer, new_image: DockerImage):
                     'bind': volume['Destination'],
                     'mode': 'rw' if volume['RW'] else volume['Mode']
                 }
-            for volume in _navigate_dict(cfg, ['HostConfig', 'Mounts'], [])
+            for volume in _navigate_dict(cfg, ['Mounts'], [])
         }
     }
 
