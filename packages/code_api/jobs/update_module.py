@@ -27,6 +27,7 @@ class UpdateModuleJob(Job):
 
     def step(self):
         module_name = self._module.name
+        # noinspection PyBroadException
         try:
             substep = 'Initializing'
             client = get_client()
@@ -56,7 +57,8 @@ class UpdateModuleJob(Job):
                         completed_layers.add(step['id'])
                     # compute progress
                     if len(total_layers) > 0:
-                        yield True, substep, 5 + int(80 * len(completed_layers) / len(total_layers))
+                        progress = 5 + int(80 * len(completed_layers) / len(total_layers))
+                        yield True, substep, progress
             except (docker.errors.APIError, Exception):
                 msg = 'An error occurred while pulling a new version of the module ' + module_name
                 logger.error(
@@ -151,7 +153,7 @@ class UpdateModuleJob(Job):
                 i += 1
             yield True, substep, 95
 
-            # step 5 [5%]: remove old containers
+            # step 5 [+5%]: remove old containers
             substep = 'Removing old containers'
             logger.debug('Module {}: Removing old containers.'.format(module_name))
             i = 0
@@ -202,6 +204,7 @@ class UpdateModuleWorker(Thread):
     def _work(self):
         while self._alive:
             if self._job.is_time():
+                # noinspection PyBroadException
                 try:
                     # tell everybody we are UPDATING
                     self._module.status = ModuleStatus.UPDATING
