@@ -11,7 +11,7 @@ class CodeAPIApp(DTProcess):
     
     def __init__(self):
         super(CodeAPIApp, self).__init__('CodeAPI')
-        self._api = CodeAPI()
+        self._api = CodeAPI(debug=self.is_debug)
         self.status = AppStatus.RUNNING
         self._updates_checker = UpdateCheckerWorker()
         # register shutdown callback

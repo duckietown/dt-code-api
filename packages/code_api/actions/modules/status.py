@@ -8,10 +8,11 @@ from code_api.knowledge_base import KnowledgeBase
 from code_api.constants import ModuleStatus
 
 
-status = Blueprint('status', __name__)
+status = Blueprint('modules_status', __name__)
+__all__ = ['status']
 
 
-@status.route('/status')
+@status.route('/modules/status')
 def _status():
     # recheck can be forced
     if request.args.get('force', '0').lower() in ['1', 'yes', 'true']:

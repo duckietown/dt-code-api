@@ -1,7 +1,7 @@
 import os
 from enum import IntEnum
 
-API_VERSION = '1.0'
+API_VERSION = '1.1'
 
 CHECK_UPDATES_EVERY_MIN = max(1, int(os.environ.get('CHECK_UPDATES_EVERY_MIN', 10)))
 RELEASES_ONLY = os.environ.get('RELEASES_ONLY', 'yes').lower() in ['1', 'yes', 'true']
@@ -23,6 +23,7 @@ CANONICAL_ARCH = {
 }
 
 DOCKER_LABEL_DOMAIN = "org.duckietown.label"
+DT_LAUNCHER_PREFIX = "dt-launcher-"
 
 DOCKER_HUB_API_URL = {
     'token':
@@ -49,3 +50,28 @@ class ModuleStatus(IntEnum):
     NOT_FOUND = 5
     UPDATING = 10
     ERROR = 20
+
+
+class ContainerStatus(IntEnum):
+    NOTFOUND = -1
+    UNKNOWN = 0
+    CREATED = 1
+    RUNNING = 2
+    PAUSED = 3
+    RESTARTING = 4
+    REMOVING = 5
+    EXITED = 6
+    DEAD = 7
+    REMOVED = 8
+
+    @staticmethod
+    def from_string(status):
+        return {
+            "created": ContainerStatus.CREATED,
+            "running": ContainerStatus.RUNNING,
+            "paused": ContainerStatus.PAUSED,
+            "restarting": ContainerStatus.RESTARTING,
+            "removing": ContainerStatus.REMOVING,
+            "exited": ContainerStatus.EXITED,
+            "dead": ContainerStatus.DEAD
+        }[status]

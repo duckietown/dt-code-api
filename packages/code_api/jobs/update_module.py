@@ -10,7 +10,8 @@ from dt_class_utils import DTProcess
 from code_api import logger
 from code_api.constants import ModuleStatus, STATIC_MODULE_CFG, DT_MODULE_TYPE
 from code_api.knowledge_base import DTModule
-from code_api.utils import get_client, get_container_config, dt_label, indent_str
+from code_api.utils import get_client, get_container_config, dt_label, indent_str, \
+    docker_compose_to_docker_sdk_config
 
 
 from .base import Job
@@ -37,6 +38,9 @@ class UpdateModuleJob(Job):
             substep = 'Fetching list of containers'
             logger.debug('Module {}: Fetching list of containers using it.'.format(module_name))
             containers = self._module.containers()
+            logger.debug('Containers:\n\t- {}'.format(
+                '(none)' if len(containers) <= 0 else '\n\t- '.join([c.name for c in containers])
+            ))
             yield True, substep, 5
 
             # step 2 [+80%]: update image
@@ -68,7 +72,6 @@ class UpdateModuleJob(Job):
                 )
                 yield False, msg, -1
                 return
-            image = client.images.get(image_name)
             yield True, substep, 85
 
             # step 2.1 [+0-15%]: do not rename/remove/recreate THIS container
@@ -83,7 +86,7 @@ class UpdateModuleJob(Job):
             substep = 'Renamig old containers'
             logger.info('Module {}: Renaming old containers.'.format(module_name))
             i = 0
-            containers_cfg = {}
+            containers_to_recreate = {}
             for container in containers:
                 try:
                     container.reload()
@@ -93,12 +96,12 @@ class UpdateModuleJob(Job):
                             module_name, old_name
                         ))
                         container.stop()
+                    new_temp_name = old_name + ('' if old_name.endswith('-old') else '-old')
                     logger.debug('Module {}: Renaming container {} -> {}.'.format(
-                        module_name, old_name, old_name + '-old'
+                        module_name, old_name, new_temp_name
                     ))
-                    container.rename(old_name + '-old')
-                    containers_cfg[old_name] = \
-                        (get_container_config(container, image), container)
+                    container.rename(new_temp_name)
+                    containers_to_recreate[old_name] = container
                 except docker.errors.NotFound:
                     # the container is gone, that is OK
                     pass
@@ -111,15 +114,49 @@ class UpdateModuleJob(Job):
             substep = 'Creating new containers'
             logger.info('Module {}: Recreate containers.'.format(module_name))
             i = 0
-            to_remove = []
-            for container_name, (old_container_cfg, old_container) in containers_cfg.items():
-                # combine old container configuration with static container configuration
+            containers_to_remove = []
+            for container_name, old_container in containers_to_recreate.items():
+                # get current container configuration
+                labels = self._module.labels()
+                current_configuration_name = old_container.labels.get(
+                    dt_label('container.configuration'), 'default')
+                # get configuration from image
+                configuration = labels.get(
+                    dt_label(f'image.configuration.{current_configuration_name}'), None)
+                if configuration is None:
+                    # reverting to `default`
+                    configuration = labels.get(dt_label(f'image.configuration.default'), None)
+                # if we still don't have a configuration, throw an error
+                if configuration is None:
+                    msg = f'The module {module_name} has no configurations declared. ' \
+                          f'Cannot recreate container `{container_name}`.'
+                    logger.error(msg)
+                    yield False, msg, -1
+                    return
+                # combine image configuration with static container configuration
+                image_configuration = json.loads(configuration)
                 container_cfg = {
-                    **old_container_cfg,
-                    **STATIC_MODULE_CFG
+                    **image_configuration,
+                    **STATIC_MODULE_CFG,
+                    'labels': {}
                 }
+                container_cfg = docker_compose_to_docker_sdk_config(container_cfg)
+                # fetch old container configuration (just for logging purposes)
+                old_configuration = get_container_config(old_container)
+                # retain container labels
+                container_cfg['labels'].update({
+                    k: v for k, v in old_configuration['labels'].items()
+                    if k.startswith(dt_label('container.'))
+                })
                 # add label container.owner
-                container_cfg['labels'].update({dt_label('container.owner'): DT_MODULE_TYPE})
+                container_cfg['labels'] = {
+                    dt_label('container.owner'): DT_MODULE_TYPE
+                }
+                # retain docker compose labels
+                container_cfg['labels'].update({
+                    k: v for k, v in old_configuration['labels'].items()
+                    if k.startswith('com.docker.compose.')
+                })
                 # print some stats
                 container_cfg['image'] = image_name
                 container_cfg['name'] = container_name
@@ -128,7 +165,7 @@ class UpdateModuleJob(Job):
                     "Old configuration was:\n\n{}\n\n"
                     "New configuration is:\n\n{}\n".format(
                         container_name, module_name,
-                        indent_str(json.dumps(old_container_cfg, sort_keys=True, indent=4)),
+                        indent_str(json.dumps(old_configuration, sort_keys=True, indent=4)),
                         indent_str(json.dumps(container_cfg, sort_keys=True, indent=4))
                     )
                 )
@@ -137,7 +174,7 @@ class UpdateModuleJob(Job):
                     client.containers.run(
                         **container_cfg
                     )
-                    to_remove.append(old_container)
+                    containers_to_remove.append(old_container)
                 except (docker.errors.ContainerError, docker.errors.ImageNotFound,
                         docker.errors.APIError):
                     msg = 'An error occurred while recreating the container ' + container_name
@@ -149,7 +186,7 @@ class UpdateModuleJob(Job):
                     yield False, msg, -1
                     return
                 # ---
-                yield True, substep, int(math.floor(90 + 5 * (i / len(containers_cfg))))
+                yield True, substep, int(math.floor(90 + 5 * (i / len(containers_to_recreate))))
                 i += 1
             yield True, substep, 95
 
@@ -157,7 +194,7 @@ class UpdateModuleJob(Job):
             substep = 'Removing old containers'
             logger.debug('Module {}: Removing old containers.'.format(module_name))
             i = 0
-            for container in to_remove:
+            for container in containers_to_remove:
                 try:
                     logger.debug('Module {}: Removing container {}.'.format(
                         module_name, container.name
@@ -171,7 +208,7 @@ class UpdateModuleJob(Job):
                         )
                     )
                 # ---
-                yield True, substep, int(math.floor(95 + 5 * (i / len(to_remove))))
+                yield True, substep, int(math.floor(95 + 5 * (i / len(containers_to_remove))))
             yield True, 'Finished', 100
             return
         except BaseException:
