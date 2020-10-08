@@ -13,8 +13,7 @@ from .actions.module.update import update as module_update
 
 from .actions.container.run import run as container_run
 from .actions.container.status import status as container_status
-from .actions.container.stop import stop as container_stop
-from .actions.container.restart import restart as container_restart
+from .actions.container.generic import generic as container_generic
 
 
 class CodeAPI(Flask):
@@ -32,8 +31,7 @@ class CodeAPI(Flask):
         # register blueprints (/container/*)
         self.register_blueprint(container_run)
         self.register_blueprint(container_status)
-        self.register_blueprint(container_stop)
-        self.register_blueprint(container_restart)
+        self.register_blueprint(container_generic)
         # apply CORS settings
         CORS(self)
         # configure logging
