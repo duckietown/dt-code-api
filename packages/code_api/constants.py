@@ -3,7 +3,8 @@ from enum import IntEnum
 
 API_VERSION = '1.1'
 
-CHECK_UPDATES_EVERY_MIN = max(1, int(os.environ.get('CHECK_UPDATES_EVERY_MIN', 10)))
+# keep the update interval big enough so that the DockerHub limits are not crossed (12 hours)
+CHECK_UPDATES_EVERY_MIN = max(1, int(os.environ.get('CHECK_UPDATES_EVERY_MIN', 12 * 60)))
 RELEASES_ONLY = os.environ.get('RELEASES_ONLY', 'yes').lower() in ['1', 'yes', 'true']
 DT_MODULE_TYPE = os.environ.get('DT_MODULE_TYPE', None)
 
