@@ -37,7 +37,7 @@ class UpdateCheckerJob(Job):
 
     def is_time(self) -> bool:
         # given the new DockerHub limits, it is never a good time to auto-check for updates
-        return False
+        return self._last_time_checked == 0
         # disabled
         # return (time.time() - self._last_time_checked) > self._check_interval_time_sec
 
