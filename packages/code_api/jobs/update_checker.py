@@ -32,7 +32,7 @@ class UpdateCheckerJob(Job):
         arch = get_endpoint_architecture()
         self._image_pattern = re.compile(f'^duckietown/(.+):{get_duckietown_distro()}-{arch}$')
         # ---
-        self._logger.info('Updates checker set to check for updates every '
+        self._logger.info('[DISABLED] Updates checker set to check for updates every '
                           '%d minutes' % CHECK_UPDATES_EVERY_MIN)
 
     def is_time(self) -> bool:
