@@ -87,6 +87,7 @@ class UpdateModuleJob(Job):
             logger.info('Module {}: Renaming old containers.'.format(module_name))
             i = 0
             containers_to_recreate = {}
+            containers_to_start = set()
             for container in containers:
                 try:
                     container.reload()
@@ -96,6 +97,7 @@ class UpdateModuleJob(Job):
                             module_name, old_name
                         ))
                         container.stop()
+                        containers_to_start.add(old_name)
                     new_temp_name = old_name + ('' if old_name.endswith('-old') else '-old')
                     logger.debug('Module {}: Renaming container {} -> {}.'.format(
                         module_name, old_name, new_temp_name
@@ -148,7 +150,7 @@ class UpdateModuleJob(Job):
                     k: v for k, v in old_configuration['labels'].items()
                     if k.startswith(dt_label('container.'))
                 })
-                # add label container.owner
+                # add label `container.owner`
                 container_cfg['labels'] = {
                     dt_label('container.owner'): DT_MODULE_TYPE
                 }
@@ -169,11 +171,14 @@ class UpdateModuleJob(Job):
                         indent_str(json.dumps(container_cfg, sort_keys=True, indent=4))
                     )
                 )
-                # run new container
+                # create/run new container
                 try:
-                    client.containers.run(
+                    new_container = client.containers.create(
                         **container_cfg
                     )
+                    if container_name in containers_to_start:
+                        logger.debug('Starting container `{}`.'.format(container_name))
+                        new_container.start()
                     containers_to_remove.append(old_container)
                 except (docker.errors.ContainerError, docker.errors.ImageNotFound,
                         docker.errors.APIError):
