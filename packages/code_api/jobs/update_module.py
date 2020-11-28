@@ -171,6 +171,10 @@ class UpdateModuleJob(Job):
                         indent_str(json.dumps(container_cfg, sort_keys=True, indent=4))
                     )
                 )
+                # take `remove`, `stdout` and `stderr` out
+                for k in ['remove', 'stdout', 'stderr']:
+                    if k in container_cfg:
+                        del container_cfg[k]
                 # create/run new container
                 try:
                     new_container = client.containers.create(
