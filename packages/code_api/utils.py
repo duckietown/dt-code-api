@@ -53,7 +53,8 @@ def response_not_found(action=None, *args, **kwargs):
 
 
 def get_client():
-    return docker.DockerClient(base_url='unix:///var/run/docker.sock')
+    base_url = os.environ.get('TARGET_ENDPOINT', 'unix:///var/run/docker.sock')
+    return docker.DockerClient(base_url=base_url)
 
 
 def get_endpoint_architecture():
