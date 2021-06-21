@@ -56,7 +56,7 @@ COPY ./dependencies-py3.txt "${REPO_PATH}/"
 
 ARG PIP_INDEX_URL="https://pypi.org/simple"
 ENV PIP_INDEX_URL=${PIP_INDEX_URL}
-RUN pip3 install -r ${REPO_PATH}/dependencies-py3.txt
+RUN python3 -m pip install -r ${REPO_PATH}/dependencies-py3.txt
 
 # copy the source code
 COPY ./packages "${REPO_PATH}/packages"
