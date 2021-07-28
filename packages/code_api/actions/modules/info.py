@@ -4,10 +4,11 @@ from code_api.utils import response_ok, dt_label
 from code_api.knowledge_base import KnowledgeBase
 
 
-info = Blueprint('info', __name__)
+info = Blueprint('modules_info', __name__)
+__all__ = ['info']
 
 
-@info.route('/info')
+@info.route('/modules/info')
 def _info():
     # return current status
     data = {}

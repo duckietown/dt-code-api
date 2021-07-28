@@ -6,9 +6,8 @@ from flask import jsonify
 from datetime import datetime
 
 from docker.models.containers import Container as DockerContainer
-from docker.models.images import Image as DockerImage
 
-from .constants import CANONICAL_ARCH, DOCKER_LABEL_DOMAIN, DOCKER_HUB_API_URL
+from .constants import CANONICAL_ARCH, DOCKER_LABEL_DOMAIN, DOCKER_HUB_API_URL, DT_LAUNCHER_PREFIX
 
 
 def response_ok(data, *args, **kwargs):
@@ -54,7 +53,8 @@ def response_not_found(action=None, *args, **kwargs):
 
 
 def get_client():
-    return docker.DockerClient(base_url='unix:///var/run/docker.sock')
+    base_url = os.environ.get('TARGET_ENDPOINT', 'unix:///var/run/docker.sock')
+    return docker.DockerClient(base_url=base_url)
 
 
 def get_endpoint_architecture():
@@ -75,6 +75,10 @@ def dt_label(key, value=None):
     if value is not None:
         label = f"{label}={value}"
     return label
+
+
+def dt_launcher(name):
+    return f'{DT_LAUNCHER_PREFIX}{name}'
 
 
 def inspect_remote_image(image, tag):
@@ -110,19 +114,11 @@ def parse_time(time_iso):
     return time
 
 
-def get_container_config(container: DockerContainer, new_image: DockerImage):
+def get_container_config(container: DockerContainer):
     # update container's data
     container.reload()
-    # get container's image
-    image = container.image
-    # get image default ENV
-    old_default_env = set(image.attrs['Config']['Env'])
     # get current container's ENV
-    old_env = set(container.attrs['Config']['Env'])
-    # get new image ENV
-    new_default_env = set(new_image.attrs['Config']['Env'])
-    # compute new container ENV
-    new_env = list(old_env.difference(old_default_env).difference(new_default_env))
+    env = container.attrs['Config']['Env']
     # compile new configuration
     cfg = container.attrs
     return {
@@ -131,7 +127,7 @@ def get_container_config(container: DockerContainer, new_image: DockerImage):
             '{}:{}:{}'.format(dev['PathOnHost'], dev['PathInContainer'], dev['CgroupPermissions'])
             for dev in _navigate_dict(cfg, ['HostConfig', 'Devices'], [])
         ],
-        'environment': new_env,
+        'environment': env,
         'labels': _navigate_dict(cfg, ['Config', 'Labels'], {}),
         'network_mode': cfg['HostConfig']['NetworkMode'],
         'ports': {
@@ -148,9 +144,28 @@ def get_container_config(container: DockerContainer, new_image: DockerImage):
                     'bind': volume['Destination'],
                     'mode': 'rw' if volume['RW'] else volume['Mode']
                 }
-            for volume in _navigate_dict(cfg, ['HostConfig', 'Mounts'], [])
+            for volume in _navigate_dict(cfg, ['Mounts'], [])
         }
     }
+
+
+def docker_compose_to_docker_sdk_config(configuration: dict):
+    new_config = {}
+    for _k, _v in configuration.items():
+        k, v = _k, _v
+        # ---
+        if k == 'restart':
+            k = 'restart_policy'
+            if isinstance(v, str):
+                v = {
+                    'Name': v
+                }
+            if v['Name'] == 'never':
+                # this is the default value, just omit it
+                continue
+        # ---
+        new_config[k] = v
+    return new_config
 
 
 def _navigate_dict(struct, path, default):

@@ -32,11 +32,14 @@ class UpdateCheckerJob(Job):
         arch = get_endpoint_architecture()
         self._image_pattern = re.compile(f'^duckietown/(.+):{get_duckietown_distro()}-{arch}$')
         # ---
-        self._logger.info('Updates checker set to check for updates every '
+        self._logger.info('[DISABLED] Updates checker set to check for updates every '
                           '%d minutes' % CHECK_UPDATES_EVERY_MIN)
 
     def is_time(self) -> bool:
-        return (time.time() - self._last_time_checked) > self._check_interval_time_sec
+        # given the new DockerHub limits, it is never a good time to auto-check for updates
+        return self._last_time_checked == 0
+        # disabled
+        # return (time.time() - self._last_time_checked) > self._check_interval_time_sec
 
     def step(self):
         self._logger.info('Rechecking the status of modules...')
