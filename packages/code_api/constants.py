@@ -17,17 +17,10 @@ CANONICAL_ARCH = {
     'x86_64': 'amd64',
     'amd64': 'amd64',
     'Intel 64': 'amd64',
-
-    # 'aarch64': 'arm64v8',
-    # 'arm64': 'arm64v8',
-    # 'arm64v8': 'arm64v8',
-    # 'armv8': 'arm64v8',
-
-    # TODO: temporary redirect to arm32v7
-    'aarch64': 'arm32v7',
-    'arm64': 'arm32v7',
-    'arm64v8': 'arm32v7',
-    'armv8': 'arm32v7',
+    'aarch64': 'arm64v8',
+    'arm64': 'arm64v8',
+    'arm64v8': 'arm64v8',
+    'armv8': 'arm64v8',
 }
 
 DOCKER_LABEL_DOMAIN = "org.duckietown.label"
