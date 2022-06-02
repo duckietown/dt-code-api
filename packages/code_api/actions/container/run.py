@@ -30,7 +30,9 @@ def _run(module_name):
         pass
     # spawn a `run_container` worker
     worker = RunContainerWorker(
-        module, configuration, launcher,
+        module,
+        configuration,
+        launcher,
         container_name=name,
         custom_configuration=custom_configuration
     )

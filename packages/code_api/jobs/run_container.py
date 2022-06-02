@@ -49,7 +49,6 @@ class RunContainerJob(Job):
         return self._container is None
 
     def step(self):
-        client = get_client()
         # lock
         self._lock.acquire()
         if not self.is_time():
@@ -62,6 +61,8 @@ class RunContainerJob(Job):
             # release lock
             self._lock.release()
             return True, None
+        # open connection to the docker engine
+        client = get_client()
         # make sure the container name is not taken
         if self._container_name:
             try:
