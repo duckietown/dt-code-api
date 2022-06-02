@@ -7,6 +7,7 @@ API_VERSION = '1.1'
 CHECK_UPDATES_EVERY_MIN = max(1, int(os.environ.get('CHECK_UPDATES_EVERY_MIN', 12 * 60)))
 RELEASES_ONLY = os.environ.get('RELEASES_ONLY', 'yes').lower() in ['1', 'yes', 'true']
 DT_MODULE_TYPE = os.environ.get('DT_MODULE_TYPE', None)
+STACKS_TMP_DIR = '/tmp/stacks'
 
 CANONICAL_ARCH = {
     'arm': 'arm32v7',
