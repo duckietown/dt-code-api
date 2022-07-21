@@ -32,14 +32,11 @@ class UpdateCheckerJob(Job):
         arch = get_endpoint_architecture()
         self._image_pattern = re.compile(f'^duckietown/(.+):{get_duckietown_distro()}-{arch}$')
         # ---
-        self._logger.info('[DISABLED] Updates checker set to check for updates every '
+        self._logger.info('Updates checker set to check for updates every '
                           '%d minutes' % CHECK_UPDATES_EVERY_MIN)
 
     def is_time(self) -> bool:
-        # given the new DockerHub limits, it is never a good time to auto-check for updates
-        return self._last_time_checked == 0
-        # disabled
-        # return (time.time() - self._last_time_checked) > self._check_interval_time_sec
+        return (time.time() - self._last_time_checked) > self._check_interval_time_sec
 
     def step(self):
         self._logger.info('Rechecking the status of modules...')
@@ -109,12 +106,10 @@ class UpdateCheckerJob(Job):
                     module.status = ModuleStatus.NOT_FOUND
                 continue
 
-            # fetch local and remote build time
-            image_labels = module.labels()
-            time_lbl = dt_label('time')
-            image_time_str = image_labels.get(time_lbl, 'ND')
+            # fetch local and remote image creation time
+            image_time_str = module.image_creation_time
             image_time = parse_time(image_time_str)
-            remote_time_str = remote_labels.get(time_lbl, 'ND')
+            remote_time_str = module.remote_image_creation_time.strip()
             remote_time = parse_time(remote_time_str)
 
             # error, up-to-date or to update

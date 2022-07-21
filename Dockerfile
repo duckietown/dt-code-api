@@ -87,5 +87,5 @@ ENV DT_DISTRO "${DISTRO}"
 
 # configure the application, you can update these values when doing docker run
 ENV TARGET_ENDPOINT "unix:///var/run/docker.sock"
-ENV CHECK_UPDATES_EVERY_MIN 10
+ENV CHECK_UPDATES_EVERY_MIN 30
 ENV RELEASES_ONLY "yes"

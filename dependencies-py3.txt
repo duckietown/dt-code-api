@@ -1,3 +1,6 @@
 # LIST YOUR PYTHON3 PACKAGES HERE
 docker
 docker-compose
+
+# this is needed to parse datetime strings given by docker
+iso8601

@@ -3,11 +3,13 @@ from enum import IntEnum
 
 API_VERSION = '1.1'
 
-# keep the update interval big enough so that the DockerHub limits are not crossed (12 hours)
-CHECK_UPDATES_EVERY_MIN = max(1, int(os.environ.get('CHECK_UPDATES_EVERY_MIN', 12 * 60)))
+CHECK_UPDATES_EVERY_MIN = max(1, int(os.environ.get('CHECK_UPDATES_EVERY_MIN', 30)))
 RELEASES_ONLY = os.environ.get('RELEASES_ONLY', 'yes').lower() in ['1', 'yes', 'true']
+DOCKER_REGISTRY = os.environ.get("DOCKER_REGISTRY", "docker.io")
 DT_MODULE_TYPE = os.environ.get('DT_MODULE_TYPE', None)
 STACKS_TMP_DIR = '/tmp/stacks'
+AUTOBOOT_STACKS_DIR = '/data/autoboot'
+AUTOBOOT_STACK_PROJECT_NAME = "duckietown"
 
 CANONICAL_ARCH = {
     'arm': 'arm32v7',
@@ -26,15 +28,9 @@ CANONICAL_ARCH = {
 
 DOCKER_LABEL_DOMAIN = "org.duckietown.label"
 DT_LAUNCHER_PREFIX = "dt-launcher-"
-
-DOCKER_HUB_API_URL = {
-    'token':
-        'https://auth.docker.io/token?scope=repository:{image}:pull&service=registry.docker.io',
-    'digest':
-        'https://registry-1.docker.io/v2/{image}/manifests/{tag}',
-    'inspect':
-        'https://registry-1.docker.io/v2/{image}/blobs/{digest}'
-}
+DOCKER_PUBLIC_INDEX_URL = lambda image, tag, registry=DOCKER_REGISTRY: \
+    f"https://duckietown-public-storage.s3.amazonaws.com/docker/image/" \
+    f"{registry}/{image}/{tag}/latest.json"
 
 STATIC_MODULE_CFG = {
     'auto_remove': False,
