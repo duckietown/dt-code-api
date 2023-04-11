@@ -1,13 +1,26 @@
-from typing import Dict, Iterator, Tuple, Any, Union, List
+import dataclasses
+import os
+import re
+import traceback
+from re import Pattern
+from typing import Dict, Iterator, Tuple, Any, Union, List, Optional
+
+import yaml
 from docker.models.images import Image as DockerImage
 from docker.models.containers import Container as DockerContainer
 
-from .constants import ModuleStatus
-from .utils import inspect_remote_image, dt_label, get_client
+from .constants import ModuleStatus, AUTOBOOT_STACKS_DIR, DOCKER_REGISTRY
+from .utils import fetch_image_from_index, dt_label, get_client
 
 
 class NotSet:
     pass
+
+
+@dataclasses.dataclass
+class DockerService:
+    name: str
+    configuration: dict
 
 
 class _KnowledgeBase(dict):
@@ -47,6 +60,8 @@ class _KnowledgeBase(dict):
 
 
 class DTModule(object):
+
+    DOCKER_COMPOSE_IMAGE_REGEX = r'\$\{[^}]*\}'
 
     def __init__(self, image, tag):
         if not isinstance(image, DockerImage):
@@ -139,6 +154,27 @@ class DTModule(object):
     def progress(self, progress: int):
         self._progress = progress
 
+    @property
+    def image_creation_time(self) -> str:
+        return self._image.attrs.get("Created", "ND")
+
+    @property
+    def remote_image_creation_time(self) -> str:
+        # get image name in image and tag separately
+        image, tag = self.repository_and_tag()
+        if image is None or tag is None:
+            return "ND"
+        # ---
+        try:
+            metadata = fetch_image_from_index(image, tag)
+            return metadata["image"].get("Created", "ND")
+        except KeyError:
+            traceback.print_last()
+        except BaseException:
+            pass
+        # ---
+        return "ND"
+
     def repository_and_tag(self) -> Union[Tuple[str, str], Tuple[None, None]]:
         try:
             image, tag = self._tag.split(':')
@@ -150,7 +186,7 @@ class DTModule(object):
     def labels(self) -> Dict[str, str]:
         return self._image.labels
 
-    def remote_labels(self) -> Union[Dict[str, str], None]:
+    def remote_labels(self) -> Optional[Dict[str, str]]:
         labels = None
         metadata = None
         # get image name in image and tag separately
@@ -159,13 +195,12 @@ class DTModule(object):
             return None
         # ---
         try:
-            metadata = inspect_remote_image(image, tag)
+            metadata = fetch_image_from_index(image, tag)
         except BaseException:
             pass
         # ---
         if metadata is not None and isinstance(metadata, dict):
-            remote_config = metadata['config'] if 'config' in metadata else {}
-            labels = remote_config['Labels'] if 'Labels' in remote_config else None
+            labels = metadata.get('labels', None)
         return labels
 
     def containers(self, status='all') -> List[DockerContainer]:
@@ -183,6 +218,40 @@ class DTModule(object):
                 **({'status': status} if status != 'all' else {})
             }
         )
+
+    def default_services(self) -> List[DockerService]:
+        robot_type: str = os.environ.get('ROBOT_TYPE', '__NOTSET__')
+        robot_stack_fpath: str = os.path.join(AUTOBOOT_STACKS_DIR, f"{robot_type}.yaml")
+        module_image = f"{DOCKER_REGISTRY}/{self._tag}"
+        # make sure the stack file is available
+        if not os.path.isfile(robot_stack_fpath):
+            print(f"WARNING: Autoboot stack file '{robot_stack_fpath}' not found.")
+            return []
+        # load stack file
+        with open(robot_stack_fpath, "rt") as fin:
+            stack = yaml.safe_load(fin)
+        # get services from stack
+        services = []
+        pattern: Pattern = re.compile(self.DOCKER_COMPOSE_IMAGE_REGEX)
+        for srv_name, srv_config in stack.get("services", {}).items():
+            # sanitize image
+            image: str = srv_config["image"]
+            for e in pattern.finditer(image):
+                orig: str = e.group(0)
+                key, default = orig[2:-1].split(":-", maxsplit=1)
+                # use given docker registry
+                if key == "REGISTRY":
+                    default = DOCKER_REGISTRY
+                # replace variables in image name
+                image = image.replace(orig, default)
+            # check if there is a match
+            if module_image == image:
+                # add service to list
+                services.append(DockerService(
+                    name=srv_name,
+                    configuration=srv_config
+                ))
+        return services
 
 
 KnowledgeBase = _KnowledgeBase()

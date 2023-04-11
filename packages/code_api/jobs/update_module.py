@@ -1,19 +1,17 @@
-import json
-import math
-import time
+import subprocess
 import traceback
 from threading import Thread
-import docker.errors
 
-from dt_class_utils import DTProcess
+import docker.errors
+import time
 
 from code_api import logger
-from code_api.constants import ModuleStatus, STATIC_MODULE_CFG, DT_MODULE_TYPE
+from code_api.constants import ModuleStatus, DT_MODULE_TYPE, \
+    AUTOBOOT_STACK_PROJECT_NAME
 from code_api.knowledge_base import DTModule
-from code_api.utils import get_client, get_container_config, dt_label, indent_str, \
-    docker_compose_to_docker_sdk_config
-
-
+from code_api.utils import get_client, indent_str, \
+    get_default_docker_stack_fpath
+from dt_class_utils import DTProcess
 from .base import Job
 
 
@@ -47,7 +45,6 @@ class UpdateModuleJob(Job):
             substep = 'Pulling image'
             logger.debug('Module {}: Pulling new image.'.format(module_name))
             repository, tag = self._module.repository_and_tag()
-            image_name = '{}:{}'.format(repository, tag)
             total_layers = set()
             completed_layers = set()
             try:
@@ -74,7 +71,7 @@ class UpdateModuleJob(Job):
                 return
             yield True, substep, 85
 
-            # step 2.1 [+0-15%]: do not rename/remove/recreate THIS container
+            # step 3 [+0-15%]: do not rename/remove/recreate THIS container
             if module_name == DT_MODULE_TYPE:
                 logger.info('Module {}: Updated, but its containers are left untouched.'.format(
                     module_name
@@ -82,144 +79,32 @@ class UpdateModuleJob(Job):
                 yield True, 'Finished', 100
                 return
 
-            # step 3 [+5%]: stop and rename containers
-            substep = 'Renamig old containers'
-            logger.info('Module {}: Renaming old containers.'.format(module_name))
-            i = 0
-            containers_to_recreate = {}
-            containers_to_start = set()
-            for container in containers:
+            # step 4 [+15%]: find services in default stack using this image
+            substep = 'Recreating services'
+            services = self._module.default_services()
+            for i, service in enumerate(services):
+                # get stack file path
+                stack_fpath = get_default_docker_stack_fpath()
+                # re-apply stack (this service only)
+                cmd = [
+                    "docker-compose",
+                    "--file", stack_fpath,
+                    "--project-name", AUTOBOOT_STACK_PROJECT_NAME,
+                    "up",
+                    "--detach",
+                    service.name
+                ]
+                logger.debug(f"$ {cmd}")
+                # noinspection PyBroadException
                 try:
-                    container.reload()
-                    old_name = container.name
-                    if container.status == 'running':
-                        logger.debug('Module {}: Stopping container {}.'.format(
-                            module_name, old_name
-                        ))
-                        container.stop()
-                        containers_to_start.add(old_name)
-                    new_temp_name = old_name + ('' if old_name.endswith('-old') else '-old')
-                    logger.debug('Module {}: Renaming container {} -> {}.'.format(
-                        module_name, old_name, new_temp_name
-                    ))
-                    container.rename(new_temp_name)
-                    containers_to_recreate[old_name] = container
-                except docker.errors.NotFound:
-                    # the container is gone, that is OK
-                    pass
+                    subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
+                except BaseException:
+                    traceback.print_last()
                 # ---
-                yield True, substep, int(math.floor(85 + 5 * (i / len(containers))))
-                i += 1
-            yield True, substep, 90
-
-            # step 4 [+5%]: recreate containers
-            substep = 'Creating new containers'
-            logger.info('Module {}: Recreate containers.'.format(module_name))
-            i = 0
-            containers_to_remove = []
-            for container_name, old_container in containers_to_recreate.items():
-                # get current container configuration
-                labels = self._module.labels()
-                current_configuration_name = old_container.labels.get(
-                    dt_label('container.configuration'), 'default')
-                # get configuration from image
-                configuration = labels.get(
-                    dt_label(f'image.configuration.{current_configuration_name}'), None)
-                if configuration is None:
-                    # reverting to `default`
-                    configuration = labels.get(dt_label(f'image.configuration.default'), None)
-                # if we still don't have a configuration, throw an error
-                if configuration is None:
-                    msg = f'The module {module_name} has no configurations declared. ' \
-                          f'Cannot recreate container `{container_name}`.'
-                    logger.error(msg)
-                    yield False, msg, -1
-                    return
-                # combine image configuration with static container configuration
-                image_configuration = json.loads(configuration)
-                container_cfg = {
-                    **image_configuration,
-                    **STATIC_MODULE_CFG,
-                    'labels': {}
-                }
-                container_cfg = docker_compose_to_docker_sdk_config(container_cfg)
-                # fetch old container configuration (just for logging purposes)
-                old_configuration = get_container_config(old_container)
-                # retain container labels
-                container_cfg['labels'].update({
-                    k: v for k, v in old_configuration['labels'].items()
-                    if k.startswith(dt_label('container.'))
-                })
-                # add label `container.owner`
-                container_cfg['labels'] = {
-                    dt_label('container.owner'): DT_MODULE_TYPE
-                }
-                # retain docker compose labels
-                container_cfg['labels'].update({
-                    k: v for k, v in old_configuration['labels'].items()
-                    if k.startswith('com.docker.compose.')
-                })
-                # print some stats
-                container_cfg['image'] = image_name
-                container_cfg['name'] = container_name
-                logger.info(
-                    "Recreating container {} for module {};\n"
-                    "Old configuration was:\n\n{}\n\n"
-                    "New configuration is:\n\n{}\n".format(
-                        container_name, module_name,
-                        indent_str(json.dumps(old_configuration, sort_keys=True, indent=4)),
-                        indent_str(json.dumps(container_cfg, sort_keys=True, indent=4))
-                    )
-                )
-                # take `remove`, `stdout` and `stderr` out
-                for k in ['remove', 'stdout', 'stderr']:
-                    if k in container_cfg:
-                        del container_cfg[k]
-                # create/run new container
-                try:
-                    new_container = client.containers.create(
-                        **container_cfg
-                    )
-                    if container_name in containers_to_start:
-                        logger.debug('Starting container `{}`.'.format(container_name))
-                        new_container.start()
-                    containers_to_remove.append(old_container)
-                except (docker.errors.ContainerError, docker.errors.ImageNotFound,
-                        docker.errors.APIError):
-                    msg = 'An error occurred while recreating the container ' + container_name
-                    logger.error(
-                        '{}.\nThe error reads:\n{}'.format(
-                            msg, indent_str(traceback.format_exc())
-                        )
-                    )
-                    yield False, msg, -1
-                    return
-                # ---
-                yield True, substep, int(math.floor(90 + 5 * (i / len(containers_to_recreate))))
-                i += 1
-            yield True, substep, 95
-
-            # step 5 [+5%]: remove old containers
-            substep = 'Removing old containers'
-            logger.debug('Module {}: Removing old containers.'.format(module_name))
-            i = 0
-            for container in containers_to_remove:
-                try:
-                    logger.debug('Module {}: Removing container {}.'.format(
-                        module_name, container.name
-                    ))
-                    container.remove()
-                except (docker.errors.ContainerError, docker.errors.ImageNotFound,
-                        docker.errors.APIError):
-                    logger.warning(
-                        'An error occurred while trying to remove the old container {}.'.format(
-                            container.name
-                        )
-                    )
-                # ---
-                yield True, substep, int(math.floor(95 + 5 * (i / len(containers_to_remove))))
-            yield True, 'Finished', 100
-            return
+                progress = 85 + int(15 * ((i + 1) / len(services)))
+                yield True, substep, progress
+            # ---
+            yield True, substep, 100
         except BaseException:
             logger.error(
                 'An error occurred while trying to update the module {}.\n'

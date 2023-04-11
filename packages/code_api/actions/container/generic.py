@@ -15,10 +15,10 @@ __all__ = ['generic']
 def _generic(action, container_name):
     # validate action
     if action not in SUPPORTED_ACTIONS:
-        return response_error(f"The action '{action}' is not supported.")
+        return response_error(f"The action '{action}' is not supported")
     # get docker client
     client = get_client()
-    # restart container
+    # perform action on container
     try:
         container = client.containers.get(container_name)
         handler = getattr(container, action)

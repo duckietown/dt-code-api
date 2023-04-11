@@ -2,3 +2,7 @@
 # NOTE: only place non-Duckietown libraries here; pin versions only if necessary
 
 docker
+docker-compose
+
+# this is needed to parse datetime strings given by docker
+iso8601

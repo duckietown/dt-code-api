@@ -1,13 +1,13 @@
 import os
-import json
 import docker
 import requests
 from flask import jsonify
-from datetime import datetime
+from iso8601 import parse_date
 
 from docker.models.containers import Container as DockerContainer
 
-from .constants import CANONICAL_ARCH, DOCKER_LABEL_DOMAIN, DOCKER_HUB_API_URL, DT_LAUNCHER_PREFIX
+from .constants import CANONICAL_ARCH, DOCKER_LABEL_DOMAIN, DT_LAUNCHER_PREFIX, \
+    AUTOBOOT_STACKS_DIR, DOCKER_PUBLIC_INDEX_URL
 
 
 def response_ok(data, *args, **kwargs):
@@ -81,34 +81,15 @@ def dt_launcher(name):
     return f'{DT_LAUNCHER_PREFIX}{name}'
 
 
-def inspect_remote_image(image, tag):
-    res = requests.get(DOCKER_HUB_API_URL['token'].format(image=image), timeout=10).json()
-    token = res['token']
-    # ---
-    res = requests.get(
-        DOCKER_HUB_API_URL['digest'].format(image=image, tag=tag),
-        headers={
-            "Accept": "application/vnd.docker.distribution.manifest.v2+json",
-            "Authorization": "Bearer {0}".format(token)
-        },
-        timeout=10
-    ).text
-    digest = json.loads(res)['config']['digest']
-    # ---
-    res = requests.get(
-        DOCKER_HUB_API_URL['inspect'].format(image=image, tag=tag, digest=digest),
-        headers={
-            "Authorization": "Bearer {0}".format(token)
-        },
-        timeout=10
-    ).json()
-    return res
+def fetch_image_from_index(image, tag):
+    url = DOCKER_PUBLIC_INDEX_URL(image, tag)
+    return requests.get(url, timeout=10).json()
 
 
 def parse_time(time_iso):
     time = None
     try:
-        time = datetime.strptime(time_iso, "%Y-%m-%dT%H:%M:%S.%f")
+        time = parse_date(time_iso)
     except ValueError:
         pass
     return time
@@ -166,6 +147,11 @@ def docker_compose_to_docker_sdk_config(configuration: dict):
         # ---
         new_config[k] = v
     return new_config
+
+
+def get_default_docker_stack_fpath() -> str:
+    robot_type: str = os.environ.get('ROBOT_TYPE', '__NOTSET__')
+    return os.path.join(AUTOBOOT_STACKS_DIR, f"{robot_type}.yaml")
 
 
 def _navigate_dict(struct, path, default):
