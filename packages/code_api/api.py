@@ -13,6 +13,7 @@ from .actions.module.update import update as module_update
 
 from .actions.container.run import run as container_run
 from .actions.container.status import status as container_status
+from .actions.container.logs import logs as container_logs
 from .actions.container.generic import generic as container_generic
 
 from .actions.stack.up import up as stack_up
@@ -35,6 +36,7 @@ class CodeAPI(Flask):
         # register blueprints (/container/*)
         self.register_blueprint(container_run)
         self.register_blueprint(container_status)
+        self.register_blueprint(container_logs)
         self.register_blueprint(container_generic)
         # register blueprints (/stack/*)
         self.register_blueprint(stack_up)
