@@ -17,7 +17,7 @@ def _list():
     client = get_client()
     # get list of docker container names
     try:
-        list_container = client.containers.list()
+        list_container: List[Container] = client.containers.list()
         list_container_names = [c.attrs['Name'] for c in list_container]
         # return status
         return response_ok({'list_running_containers': list_container_names})
