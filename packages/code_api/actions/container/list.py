@@ -20,7 +20,7 @@ def _list():
         list_container: List[Container] = client.containers.list()
         list_container_names = [c.attrs['Name'] for c in list_container]
         # return status
-        return response_ok({'list_running_containers': list_container_names})
+        return response_ok({'containers': list_container_names})
     except (docker.errors.APIError, KeyError) as e:
         return response_error(f"Error: {str(e)}")
         
