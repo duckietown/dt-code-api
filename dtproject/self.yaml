@@ -1,0 +1,8 @@
+name: "dt-code-api"
+maintainer:
+    name: "Andrea F. Daniele"
+    email: "afdaniele@duckietown.com"
+description: "Provides a RESTful API through which it is possible to receive OTA updates from Duckietown"
+version: 4.0.3
+# pick an icon from: https://fontawesome.com/v4.7.0/icons/
+icon: cloud-download
