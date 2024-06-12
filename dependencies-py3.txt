@@ -1,7 +1,8 @@
 # LIST YOUR PYTHON3 PACKAGES HERE
 
-docker
-docker-compose
+PyYAML==5.3.1
+docker==7.1.0
+docker-compose==1.29.2
 
 # this is needed to parse datetime strings given by docker
-iso8601
+iso8601==2.1.0
